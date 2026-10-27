@@ -19,6 +19,7 @@ const REFRESH_MS = 60_000;
 const GEOLOCATION_TIMEOUT_MS = 10_000;
 
 type Observer = { latDeg: number; lonDeg: number; isFallback: boolean };
+type AndroidBackWindow = Window & { onAndroidBack?: () => boolean };
 
 // "더 이상 안내하지 않기"를 체크하면 이 브라우저에 기억한다. 저장소를 쓸 수 없으면 기억하지 않는다.
 const HINT_DISMISSED_KEY = "starmap:rotate-hint-dismissed";
@@ -160,6 +161,30 @@ export function Starmap() {
     setHintOpen(false);
   }, []);
 
+  // 안드로이드 앱(android/)의 뒤로 가기 버튼이 먼저 묻는다. 가운데 창, 별자리 팝업 순으로 닫고
+  // 닫은 것이 있으면 true를 돌려준다. false면 앱이 닫힌다.
+  const dialogOpen = optionsOpen || searchOpen || arNoticeOpen || hintOpen;
+  useEffect(() => {
+    const androidWindow = window as AndroidBackWindow;
+    androidWindow.onAndroidBack = () => {
+      if (dialogOpen) {
+        setOptionsOpen(false);
+        setSearchOpen(false);
+        setArNoticeOpen(false);
+        setHintOpen(false);
+        return true;
+      }
+      if (selectedId) {
+        setSelectedId(null);
+        return true;
+      }
+      return false;
+    };
+    return () => {
+      delete androidWindow.onAndroidBack;
+    };
+  }, [dialogOpen, selectedId]);
+
   const lstDeg = observer && now ? lstDegrees(now, observer.lonDeg) : null;
 
   // 선택한 별자리는 하늘을 돌리거나 지평선 아래로 내려가도 닫을 때까지 선택된 상태로 남는다.
@@ -169,11 +194,11 @@ export function Starmap() {
   );
 
   if (failed) {
-    return <p className="text-sm text-destructive">별 데이터를 불러오지 못했습니다. 새로고침해 주세요.</p>;
+    return <p className="text-sm text-destructive max-sm:p-4">별 데이터를 불러오지 못했습니다. 새로고침해 주세요.</p>;
   }
 
   if (!observer || !now || !data || lstDeg === null) {
-    return <p className="text-sm text-muted-foreground">하늘을 계산하는 중입니다…</p>;
+    return <p className="text-sm text-muted-foreground max-sm:p-4">하늘을 계산하는 중입니다…</p>;
   }
 
   return (
@@ -191,7 +216,7 @@ export function Starmap() {
       onRecenter={relocate}
       header={
         <div
-          className="flex items-start justify-between gap-3 px-3 pt-3 pb-1 text-xs text-slate-100"
+          className="flex items-start justify-between gap-3 px-3 pt-[calc(0.75rem+env(safe-area-inset-top))] pb-1 text-xs text-slate-100"
           data-testid="sky-status"
         >
           <div className="flex min-w-0 flex-col gap-0.5">

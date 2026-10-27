@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { Starmap } from "@/features/starmap";
@@ -614,4 +614,40 @@ test("위치를 얻지 못하면 서울 기준으로 알린다", async () => {
   const status = await screen.findByTestId("sky-status");
   expect(status).toHaveTextContent("서울 (위치를 확인하지 못해 기본값 사용)");
   expect(status).toHaveTextContent("북위 37.57° · 동경 126.98°");
+});
+
+// 안드로이드 앱(android/)의 뒤로 가기 버튼은 먼저 window.onAndroidBack()을 부른다.
+// true면 웹이 처리한 것이고, false면 앱이 닫힌다.
+function pressAndroidBack() {
+  let handled: boolean | undefined;
+  act(() => {
+    handled = (window as Window & { onAndroidBack?: () => boolean }).onAndroidBack?.();
+  });
+  return handled;
+}
+
+test("뒤로 가기는 열린 가운데 창부터 닫는다", async () => {
+  stubSeoulFallback();
+  render(<Starmap />);
+
+  await clickOptionsButton();
+  await screen.findByRole("dialog", { name: "옵션" }, { timeout: 4000 });
+
+  expect(pressAndroidBack()).toBe(true);
+  expect(screen.queryByRole("dialog", { name: "옵션" })).not.toBeInTheDocument();
+});
+
+test("뒤로 가기는 가운데 창이 없으면 별자리 팝업을 닫고, 아무것도 없으면 앱에 넘긴다", async () => {
+  stubSeoulFallback();
+  render(<Starmap />);
+
+  await openSearch();
+  typeInSearch("오리온");
+  fireEvent.click(await screen.findByRole("button", { name: /오리온자리/ }));
+  await screen.findByRole("dialog", { name: "오리온자리 정보" });
+
+  expect(pressAndroidBack()).toBe(true);
+  expect(screen.queryByRole("dialog", { name: "오리온자리 정보" })).not.toBeInTheDocument();
+
+  expect(pressAndroidBack()).toBe(false);
 });

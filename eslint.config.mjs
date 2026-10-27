@@ -16,6 +16,8 @@ const eslintConfig = defineConfig([
     // .claude/worktrees holds duplicate checkouts of this app.
     ".claude/**",
     ".agents/**",
+    // android/ 의 빌드 결과에는 out/ 을 복사한 사본이 들어 있다.
+    "android/**/build/**",
   ]),
 ]);
 

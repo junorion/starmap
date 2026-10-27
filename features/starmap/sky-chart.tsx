@@ -522,7 +522,8 @@ export function SkyChart({
   }
 
   return (
-    <div className="relative mx-auto flex aspect-[9/19.5] w-full max-w-[390px] flex-col overflow-hidden rounded-xl bg-[#0b1020]">
+    // 휴대폰(640px 미만)에서는 휴대폰 모양 틀 대신 기기 화면 전체를 채운다.
+    <div className="relative mx-auto flex aspect-[9/19.5] w-full max-w-[390px] flex-col overflow-hidden rounded-xl bg-[#0b1020] max-sm:aspect-auto max-sm:h-dvh max-sm:max-w-none max-sm:rounded-none">
       {header}
       <div ref={wrapperRef} className="relative min-h-0 flex-1">
         <canvas
@@ -572,9 +573,12 @@ export function SkyChart({
           </Button>
         </div>
       </div>
-      {/* 팝업은 오른쪽 아래 메뉴 버튼(높이 40px + 여백 12px)과 겹치지 않게 그 위에 둔다. */}
-      {popup && <div className="absolute inset-x-3 bottom-[4.5rem]">{popup}</div>}
-      {menu && <div className="absolute right-3 bottom-3">{menu}</div>}
+      {/* 팝업은 오른쪽 아래 메뉴 버튼(높이 40px + 여백 12px)과 겹치지 않게 그 위에 둔다.
+          둘 다 기기의 내비게이션 바 영역(safe-area)만큼 더 올린다. */}
+      {popup && (
+        <div className="absolute inset-x-3 bottom-[calc(4.5rem+env(safe-area-inset-bottom))]">{popup}</div>
+      )}
+      {menu && <div className="absolute right-3 bottom-[calc(0.75rem+env(safe-area-inset-bottom))]">{menu}</div>}
       {dialog && (
         <div className="absolute inset-x-3 top-1/2 -translate-y-1/2">{dialog}</div>
       )}
