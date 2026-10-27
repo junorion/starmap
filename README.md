@@ -32,6 +32,23 @@ bun dev
 | `bun run test:watch` | Vitest watch 모드 |
 | `bun run test:e2e` | Playwright E2E 테스트 실행 |
 
+## 안드로이드 앱
+
+`android/` 는 정적 결과(`out/`)를 담는 WebView 래퍼다. 스펙은 [docs/specs/android-app/spec.md](docs/specs/android-app/spec.md).
+
+```bash
+bun run build                         # out/ 생성 (next.config.ts 의 output: "export")
+cd android
+echo "sdk.dir=$HOME/Android/sdk" > local.properties   # 처음 한 번, 커밋하지 않는다
+JAVA_HOME=<JDK 17> ./gradlew assembleDebug            # app/build/outputs/apk/debug/app-debug.apk
+```
+
+- 앱은 `out/` 을 `https://appassets.androidplatform.net/` 으로 내준다(`WebViewAssetLoader`). 인터넷 권한은 없다.
+- 위치는 안드로이드 위치 권한을 거쳐 웹의 `navigator.geolocation` 에 전달된다.
+- 뒤로 가기는 웹의 `window.onAndroidBack()` 에 먼저 묻는다(가운데 창 → 별자리 팝업 순으로 닫는다).
+- 아이콘 원본은 `android/icon/icon.html`, 산출물은 `android/icon/icon-512.png`.
+- 화면 폭 640px 미만(휴대폰, 앱)에서는 휴대폰 모양 틀 대신 지도가 화면 전체를 쓴다.
+
 ## 테스트
 
 - **단위·컴포넌트**: Vitest + Testing Library. 설정은 `vitest.config.mts`, 매처와 cleanup은 `vitest.setup.ts`에 있습니다. 테스트 파일은 소스 옆에 `*.test.ts(x)`로 둡니다(`app/page.test.tsx`, `lib/utils.test.ts` 참고). `globals`를 켜지 않았으므로 `describe`/`it`/`expect`는 `vitest`에서 import 합니다.

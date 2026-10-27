@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 앱이 그려지기 전 창 배경. 하늘지도의 밤하늘 색과 맞춰 흰 화면 번쩍임을 막는다. -->
+    <color name="app_background">#0b1020</color>
+</resources>

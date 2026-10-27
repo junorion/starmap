@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 안내 창 설정은 WebView 의 localStorage 에 있다. 기기를 바꿔도
+     이어서 할 수 있도록 앱 데이터를 백업 대상에 넣는다. -->
+<data-extraction-rules>
+    <cloud-backup><include domain="root" /></cloud-backup>
+    <device-transfer><include domain="root" /></device-transfer>
+</data-extraction-rules>

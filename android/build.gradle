@@ -1,0 +1,4 @@
+plugins {
+    // compileSdk 36 (Android 16) 을 쓰려면 AGP 8.9 이상이 필요하다.
+    id "com.android.application" version "8.11.1" apply false
+}

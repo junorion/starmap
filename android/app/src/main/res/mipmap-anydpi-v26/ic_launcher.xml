@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- icon-512.png 는 maskable(가장자리까지 배경, 그림은 가운데 80%)이라 통째로 배경 레이어에
+         넣는다. adaptive-icon 은 108dp 중 가운데 72dp 만 보여주므로 여백이 알맞게 잘린다. -->
+    <background android:drawable="@mipmap/ic_launcher_paper" />
+    <foreground android:drawable="@android:color/transparent" />
+</adaptive-icon>
