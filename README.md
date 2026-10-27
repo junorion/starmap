@@ -1,10 +1,10 @@
-# Claude Code Playbook Template
+# Starmap
 
-[![Claude Hunt](https://img.shields.io/badge/Claude_Hunt-강의-000000)](https://www.claude-hunt.com)
-[![Docs](https://img.shields.io/badge/docs-claude--hunt-2563eb)](https://docs.claude-hunt.com)
+지금 이 시간, 이 위치의 하늘에 보이는 별자리를 원형 하늘지도로 보여주는 앱. 웹과 안드로이드 앱(`android/`)으로 동작한다.
+제품 정의는 [PRODUCT.md](PRODUCT.md), 기능별 스펙은 [docs/specs/](docs/specs/).
 
-> [Claude Hunt](https://www.claude-hunt.com) 강의용 Next.js 16 + React 19 템플릿.
-> 사용법과 워크플로우 문서는 [docs.claude-hunt.com](https://docs.claude-hunt.com)에서 확인하세요.
+[Claude Hunt](https://www.claude-hunt.com) 강의용 Next.js 템플릿에서 시작했다. 워크플로우 문서는
+[docs.claude-hunt.com](https://docs.claude-hunt.com).
 
 ## 기술 스택
 
