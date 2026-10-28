@@ -7,6 +7,7 @@ import { CameraIcon, MapPinIcon, Rotate3dIcon, SearchIcon, SlidersHorizontalIcon
 import { Button } from "@/components/ui/button";
 import { ArNotice, type ArNoticeReason } from "@/features/starmap/ar-notice";
 import type { CameraState } from "@/features/starmap/ar-camera";
+import type { ArCorrection } from "@/features/starmap/ar-projection";
 import { ArView } from "@/features/starmap/ar-view";
 import { ConstellationPopup } from "@/features/starmap/constellation-popup";
 import { formatCoordinates } from "@/features/starmap/format-location";
@@ -40,6 +41,28 @@ function writeHintDismissed() {
     window.localStorage.setItem(HINT_DISMISSED_KEY, "1");
   } catch {
     // 저장할 수 없으면 이번 방문에서만 지킨다.
+  }
+}
+
+// AR 크기 보정: 카메라 화각 오차라 기기마다 한 번 맞추면 된다. 저장소를 쓸 수 없으면 이번 방문에서만 기억한다.
+const AR_SCALE_KEY = "starmap:ar-scale";
+
+function readArScale(): number {
+  if (typeof window === "undefined") return 1;
+  try {
+    const value = Number(window.localStorage.getItem(AR_SCALE_KEY));
+    return value >= 0.5 && value <= 2 ? value : 1;
+  } catch {
+    return 1;
+  }
+}
+
+function writeArScale(scale: number) {
+  try {
+    if (scale === 1) window.localStorage.removeItem(AR_SCALE_KEY);
+    else window.localStorage.setItem(AR_SCALE_KEY, String(scale));
+  } catch {
+    // 저장하지 못해도 이번 방문에서는 쓴다.
   }
 }
 
@@ -119,9 +142,17 @@ export function Starmap() {
   const [arNotice, setArNotice] = useState<ArNoticeReason | null>(null);
   const arNoticeOpen = arNotice !== null;
   const closeArNotice = useCallback(() => setArNotice(null), []);
-  // AR 화면(앱에서만). 방위 보정은 AR 화면을 닫았다 열어도 앱을 끄기 전까지 유지한다.
+  // AR 화면(앱에서만). 방위·기울기 보정은 AR 화면을 닫았다 열어도 앱을 끄기 전까지 유지하고,
+  // 크기(카메라의 특성)는 이 기기에 저장해 앱을 다시 열어도 유지한다.
   const [arOpen, setArOpen] = useState(false);
-  const [arAzimuthOffset, setArAzimuthOffset] = useState(0);
+  const [arCorrection, setArCorrection] = useState<ArCorrection>(() => ({
+    azimuthOffset: 0,
+    pitchOffset: 0,
+    scale: readArScale(),
+  }));
+  useEffect(() => writeArScale(arCorrection.scale), [arCorrection.scale]);
+  // AR 화면이 뒤로 가기를 먼저 처리할 수 있게(지표별 맞추기 취소 등) 넘겨받는 자리.
+  const arBackHandler = useRef<(() => boolean) | null>(null);
   const closeAr = useCallback(() => setArOpen(false), []);
   const handleCameraUnavailable = useCallback((state: Extract<CameraState, "denied" | "failed">) => {
     setArOpen(false);
@@ -184,6 +215,7 @@ export function Starmap() {
     const androidWindow = window as AndroidBackWindow;
     androidWindow.onAndroidBack = () => {
       if (arOpen) {
+        if (arBackHandler.current?.()) return true;
         if (selectedId) setSelectedId(null);
         else setArOpen(false);
         return true;
@@ -356,8 +388,9 @@ export function Starmap() {
           showAsterisms={showAsterisms}
           header={header}
           popup={popup}
-          azimuthOffset={arAzimuthOffset}
-          onAzimuthOffsetChange={setArAzimuthOffset}
+          correction={arCorrection}
+          onCorrectionChange={setArCorrection}
+          backHandlerRef={arBackHandler}
           onClose={closeAr}
           onCameraUnavailable={handleCameraUnavailable}
         />

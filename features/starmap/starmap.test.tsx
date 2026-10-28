@@ -3,6 +3,9 @@ import { join } from "node:path";
 
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import * as Astronomy from "astronomy-engine";
+
+import { horizontalCoords } from "@/features/starmap/sky-math";
 
 import { Starmap } from "@/features/starmap";
 
@@ -775,13 +778,162 @@ test("AR 화면에서 좌우로 끌면 방위 보정만 바뀌어 표시되고, 
   pointer(overlay, "pointerDown", { id: 1, x: 200, y: 400 });
   pointer(overlay, "pointerMove", { id: 1, x: 260, y: 430 });
   pointer(overlay, "pointerUp", { id: 1, x: 260, y: 430 });
-  expect(screen.getByText(/보정 −\d+°/)).toBeInTheDocument();
+  expect(screen.getByText(/방위 −\d+°/)).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole("button", { name: "AR 닫기" }));
   fireEvent.click(screen.getByRole("button", { name: "AR 모드" }));
   await screen.findByRole("region", AR_SCREEN);
-  expect(screen.getByText(/보정 −\d+°/)).toBeInTheDocument();
+  expect(screen.getByText(/방위 −\d+°/)).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole("button", { name: "보정 초기화" }));
-  expect(screen.queryByText(/보정 [+−]\d+°/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/방위 [+−]\d+°/)).not.toBeInTheDocument();
+});
+
+// ---- 지표별 맞추기 ----
+
+// AR 화면이 크기(400×800)를 알도록 하는 ResizeObserver.
+function stubSizedResizeObserver() {
+  vi.stubGlobal("ResizeObserver", class {
+    constructor(private readonly callback: ResizeObserverCallback) {}
+    observe() {
+      this.callback([{ contentRect: { width: 400, height: 800 } } as ResizeObserverEntry], this as never);
+    }
+    disconnect() {}
+  });
+}
+
+const SEOUL = { latDeg: 37.5665, lonDeg: 126.978 };
+// 여름의 대삼각형이 높이 뜬 여름밤(서울 2026-07-15 22:00).
+const SUMMER_NIGHT = new Date("2026-07-15T13:00:00Z");
+
+// 폰을 세로로 들고 카메라가 하늘의 (alt, az) 를 보게 하는 deviceorientation 각도.
+function poseToward({ alt, az }: { alt: number; az: number }) {
+  return { alpha: (360 - az) % 360, beta: 90 + alt, gamma: 0 };
+}
+
+// 베가와 알타이르 사이(여름의 대삼각형 가운데쯤)를 보게 한다.
+function poseAtSummerTriangle() {
+  const lstDeg = (((Astronomy.SiderealTime(SUMMER_NIGHT) * 15 + SEOUL.lonDeg) % 360) + 360) % 360;
+  const at = horizontalCoords({ ra: 290, dec: 30 }, { lstDeg, latDeg: SEOUL.latDeg });
+  return poseToward(at);
+}
+
+async function openArAt(pose: { alpha: number; beta: number; gamma: number }) {
+  stubAndroidApp();
+  stubSizedResizeObserver();
+  render(<Starmap />);
+  fireEvent.click(await screen.findByRole("button", { name: "AR 모드" }));
+  await screen.findByRole("region", AR_SCREEN);
+  act(() => {
+    window.dispatchEvent(Object.assign(new Event("deviceorientationabsolute"), pose));
+  });
+  await new Promise((resolve) => setTimeout(resolve, 60));
+}
+
+function twoFingerPinch(target: HTMLElement, from: number, to: number) {
+  pointer(target, "pointerDown", { id: 1, x: 200 - from / 2, y: 400, pointerType: "touch" });
+  pointer(target, "pointerDown", { id: 2, x: 200 + from / 2, y: 400, pointerType: "touch" });
+  pointer(target, "pointerMove", { id: 2, x: 200 - from / 2 + to, y: 400, pointerType: "touch" });
+  pointer(target, "pointerUp", { id: 2, x: 200 - from / 2 + to, y: 400, pointerType: "touch" });
+  pointer(target, "pointerUp", { id: 1, x: 200 - from / 2, y: 400, pointerType: "touch" });
+}
+
+test("지표별 맞추기를 누르면 자동이 골라진 맞추기 모드가 되고, 취소하면 맞추기 전으로 돌아간다", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(SUMMER_NIGHT);
+  try {
+    await openArAt(poseAtSummerTriangle());
+    fireEvent.click(screen.getByRole("button", { name: "지표별 맞추기" }));
+
+    expect(screen.getByRole("button", { name: "자동" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "수동" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "자동으로 찾기" })).toBeEnabled();
+
+    // 수동으로 바꿔 위아래로 끌고 두 손가락으로 벌린 뒤 취소한다.
+    fireEvent.click(screen.getByRole("button", { name: "수동" }));
+    const overlay = screen.getByLabelText("AR 별자리 겹쳐 보기");
+    pointer(overlay, "pointerDown", { id: 1, x: 200, y: 400 });
+    pointer(overlay, "pointerMove", { id: 1, x: 200, y: 460 });
+    pointer(overlay, "pointerUp", { id: 1, x: 200, y: 460 });
+    expect(screen.getByText(/기울기 \+\d+°/)).toBeInTheDocument();
+    twoFingerPinch(overlay, 100, 150);
+    expect(screen.getByText(/크기 ×1\.5/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "취소" }));
+    expect(screen.queryByRole("button", { name: "맞췄어요" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/기울기 [+−]\d+°/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/크기 ×/)).not.toBeInTheDocument();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("수동으로 맞추면 어느 지표별로 맞췄는지 보이고, 크기는 앱을 다시 열어도 남는다", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(SUMMER_NIGHT);
+  try {
+    await openArAt(poseAtSummerTriangle());
+    fireEvent.click(screen.getByRole("button", { name: "지표별 맞추기" }));
+    fireEvent.click(screen.getByRole("button", { name: "수동" }));
+    const overlay = screen.getByLabelText("AR 별자리 겹쳐 보기");
+    // 두 손가락을 아주 크게 벌려도 2배를 넘지 않는다.
+    twoFingerPinch(overlay, 50, 400);
+    expect(screen.getByText(/크기 ×2\.00/)).toBeInTheDocument();
+    twoFingerPinch(overlay, 200, 80);
+    // 2배일 때 화면 밖으로 나갔던 지표별이 다음 프레임에 다시 들어와야 맞출 수 있다.
+    await waitFor(() => expect(screen.getByRole("button", { name: "맞췄어요" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "맞췄어요" }));
+
+    expect(screen.getByText(/여름의 대삼각형 기준으로 맞춤 완료 · 크기 ×0\.80 \(수동\)/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "맞췄어요" })).not.toBeInTheDocument();
+  } finally {
+    vi.useRealTimers();
+  }
+
+  // 앱을 다시 연다: 크기는 남고 방위 보정은 없다.
+  cleanup();
+  await openArAt({ alpha: 0, beta: 90, gamma: 0 });
+  expect(screen.getByText(/크기 ×0\.80/)).toBeInTheDocument();
+  expect(screen.queryByText(/방위 [+−]\d+°/)).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "크기 초기화" }));
+  expect(screen.queryByText(/크기 ×/)).not.toBeInTheDocument();
+});
+
+test("자동으로 찾기가 영상에서 지표별을 찾지 못하면 그렇다고 알리고 보정은 바뀌지 않는다", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(SUMMER_NIGHT);
+  try {
+    await openArAt(poseAtSummerTriangle());
+    fireEvent.click(screen.getByRole("button", { name: "지표별 맞추기" }));
+    fireEvent.click(screen.getByRole("button", { name: "자동으로 찾기" }));
+  } finally {
+    vi.useRealTimers();
+  }
+  expect(await screen.findByText(/영상에서 지표별을 찾지 못했습니다/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "자동으로 찾기" })).toBeInTheDocument();
+  expect(screen.queryByText(/방위 [+−]\d+°|크기 ×/)).not.toBeInTheDocument();
+});
+
+test("지표별이 화면에 없으면 폰을 돌리라고 안내하고 맞추기 버튼을 누를 수 없다", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(SUMMER_NIGHT);
+  try {
+    // 땅(천저 쪽)을 비춘다.
+    await openArAt({ alpha: 0, beta: 10, gamma: 0 });
+    fireEvent.click(screen.getByRole("button", { name: "지표별 맞추기" }));
+    expect(screen.getByText("지표별이 보이는 쪽으로 폰을 돌려 주세요")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "자동으로 찾기" })).toBeDisabled();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("맞추기 모드에서 뒤로 가기는 맞추기를 취소한다", async () => {
+  await openArAt({ alpha: 0, beta: 90, gamma: 0 });
+  fireEvent.click(screen.getByRole("button", { name: "지표별 맞추기" }));
+  expect(screen.getByRole("button", { name: "취소" })).toBeInTheDocument();
+
+  expect(pressAndroidBack()).toBe(true);
+  expect(screen.queryByRole("button", { name: "취소" })).not.toBeInTheDocument();
+  expect(screen.getByRole("region", AR_SCREEN)).toBeInTheDocument();
 });

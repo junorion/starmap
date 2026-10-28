@@ -24,7 +24,14 @@ export type ScreenProjection = {
   focalPx: number;
   // 나침반 오차를 맞추는 방위 보정(도). +면 그만큼 동쪽에 있는 점이 가운데로 온다.
   azimuthOffset?: number;
+  // 기울기 보정(도). +면 화면 가운데보다 그만큼 위에 있던 점이 가운데로 온다.
+  pitchOffset?: number;
+  // 크기 배율. 카메라 화각 오차를 메운다(지표별 맞추기).
+  scale?: number;
 };
+
+// 지표별 맞추기로 정하는 보정 세 가지.
+export type ArCorrection = { azimuthOffset: number; pitchOffset: number; scale: number };
 
 function worldVector({ alt, az }: HorizontalCoords, azimuthOffset: number): [number, number, number] {
   const a = (az - azimuthOffset) * DEG;
@@ -36,7 +43,7 @@ function worldVector({ alt, az }: HorizontalCoords, azimuthOffset: number): [num
 export function projectToScreen(
   coords: HorizontalCoords,
   deviceToWorld: Matrix3,
-  { width, height, screenAngle, focalPx, azimuthOffset = 0 }: ScreenProjection
+  { width, height, screenAngle, focalPx, azimuthOffset = 0, pitchOffset = 0, scale = 1 }: ScreenProjection
 ): Point | null {
   const [e, n, u] = worldVector(coords, azimuthOffset);
   const r = deviceToWorld;
@@ -44,14 +51,19 @@ export function projectToScreen(
   const dx = r[0] * e + r[3] * n + r[6] * u;
   const dy = r[1] * e + r[4] * n + r[7] * u;
   const dz = r[2] * e + r[5] * n + r[8] * u;
-  const depth = -dz;
-  if (depth < MIN_DEPTH) return null;
 
   // 화면을 돌려 든 만큼 기기 x·y 를 화면 x·y 로 돌린다(세로 0°, 반시계 가로 90°).
   const o = screenAngle * DEG;
   const sx = dx * Math.cos(o) - dy * Math.sin(o);
-  const sy = dx * Math.sin(o) + dy * Math.cos(o);
-  return { x: width / 2 + (focalPx * sx) / depth, y: height / 2 - (focalPx * sy) / depth };
+  const up = dx * Math.sin(o) + dy * Math.cos(o);
+  // 기울기 보정: 카메라를 화면 위쪽으로 그만큼 고개 든 것처럼 돌린다.
+  const p = pitchOffset * DEG;
+  const sy = up * Math.cos(p) + dz * Math.sin(p);
+  const depth = -dz * Math.cos(p) + up * Math.sin(p);
+  if (depth < MIN_DEPTH) return null;
+
+  const f = focalPx * scale;
+  return { x: width / 2 + (f * sx) / depth, y: height / 2 - (f * sy) / depth };
 }
 
 // 카메라가 보는 방향의 고도(도).

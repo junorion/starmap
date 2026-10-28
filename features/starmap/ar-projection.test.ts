@@ -116,3 +116,18 @@ describe("calibrationStep", () => {
     expect(Math.abs(calibrationStep(10, 400, 60))).toBeGreaterThan(Math.abs(calibrationStep(10, 400, 0)));
   });
 });
+
+describe("기울기 보정과 크기 배율", () => {
+  it("기울기 보정 +10° 를 주면 고도 10° 인 점이 가운데로 온다", () => {
+    const p = projectToScreen({ alt: 10, az: 0 }, PORTRAIT_FACING_NORTH, { ...portrait, pitchOffset: 10 });
+    expect(p?.x).toBeCloseTo(200);
+    expect(p?.y).toBeCloseTo(400);
+  });
+
+  it("크기 배율 1.5 면 가운데에서 떨어진 거리가 1.5배가 된다", () => {
+    const base = projectToScreen({ alt: 5, az: 5 }, PORTRAIT_FACING_NORTH, portrait)!;
+    const scaled = projectToScreen({ alt: 5, az: 5 }, PORTRAIT_FACING_NORTH, { ...portrait, scale: 1.5 })!;
+    expect(scaled.x - 200).toBeCloseTo((base.x - 200) * 1.5);
+    expect(scaled.y - 400).toBeCloseTo((base.y - 400) * 1.5);
+  });
+});
