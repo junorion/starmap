@@ -194,11 +194,11 @@ export function Starmap() {
   );
 
   if (failed) {
-    return <p className="text-sm text-destructive max-sm:p-4">별 데이터를 불러오지 못했습니다. 새로고침해 주세요.</p>;
+    return <p className="text-sm text-destructive fullscreen:p-4">별 데이터를 불러오지 못했습니다. 새로고침해 주세요.</p>;
   }
 
   if (!observer || !now || !data || lstDeg === null) {
-    return <p className="text-sm text-muted-foreground max-sm:p-4">하늘을 계산하는 중입니다…</p>;
+    return <p className="text-sm text-muted-foreground fullscreen:p-4">하늘을 계산하는 중입니다…</p>;
   }
 
   return (

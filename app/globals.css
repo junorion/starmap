@@ -4,6 +4,17 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* 지도가 화면 전체를 쓰는 배치: 휴대폰 폭(640px 미만)이거나 안드로이드 앱(data-shell="app")일 때.
+   앱 표시는 app/layout.tsx 의 인라인 스크립트가 단다. */
+@custom-variant fullscreen {
+  @media (width < 40rem) {
+    @slot;
+  }
+  &:where([data-shell="app"] *) {
+    @slot;
+  }
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
