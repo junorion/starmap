@@ -5,6 +5,13 @@
          인터넷 권한은 없다. 앱 자산만 읽는 완전 오프라인 앱이다. -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <!-- AR 모드에서 후면 카메라 영상을 보여 준다. 영상은 저장하거나 보내지 않는다. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <!-- 카메라·나침반·자이로가 없는 기기에도 설치는 된다. 그때 AR 모드는 안내만 한다. -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.sensor.compass" android:required="false" />
+    <uses-feature android:name="android.hardware.sensor.gyroscope" android:required="false" />
 
     <application
         android:allowBackup="true"

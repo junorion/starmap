@@ -5,13 +5,16 @@ import * as Astronomy from "astronomy-engine";
 import { CameraIcon, MapPinIcon, Rotate3dIcon, SearchIcon, SlidersHorizontalIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { ArNotice } from "@/features/starmap/ar-notice";
+import { ArNotice, type ArNoticeReason } from "@/features/starmap/ar-notice";
+import type { CameraState } from "@/features/starmap/ar-camera";
+import { ArView } from "@/features/starmap/ar-view";
 import { ConstellationPopup } from "@/features/starmap/constellation-popup";
 import { formatCoordinates } from "@/features/starmap/format-location";
 import { OptionsPanel } from "@/features/starmap/options-panel";
 import { RotateHint } from "@/features/starmap/rotate-hint";
 import { SearchPanel } from "@/features/starmap/search-panel";
 import { SkyChart, type SkyChartHandle } from "@/features/starmap/sky-chart";
+import { isAndroidApp } from "@/features/starmap/native-app";
 import { loadStarmapData, type StarmapData } from "@/features/starmap/starmap-data";
 
 const SEOUL = { latDeg: 37.5665, lonDeg: 126.978 };
@@ -112,8 +115,18 @@ export function Starmap() {
   const [rotateMode, setRotateMode] = useState(false);
   const [hintOpen, setHintOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [arNoticeOpen, setArNoticeOpen] = useState(false);
-  const closeArNotice = useCallback(() => setArNoticeOpen(false), []);
+  // AR 모드 안내 창(브라우저 안내, 카메라 권한 거부 등). null 이면 닫혀 있다.
+  const [arNotice, setArNotice] = useState<ArNoticeReason | null>(null);
+  const arNoticeOpen = arNotice !== null;
+  const closeArNotice = useCallback(() => setArNotice(null), []);
+  // AR 화면(앱에서만). 방위 보정은 AR 화면을 닫았다 열어도 앱을 끄기 전까지 유지한다.
+  const [arOpen, setArOpen] = useState(false);
+  const [arAzimuthOffset, setArAzimuthOffset] = useState(0);
+  const closeAr = useCallback(() => setArOpen(false), []);
+  const handleCameraUnavailable = useCallback((state: Extract<CameraState, "denied" | "failed">) => {
+    setArOpen(false);
+    setArNotice(state === "denied" ? "camera-denied" : "camera-failed");
+  }, []);
   const closeSearch = useCallback(() => setSearchOpen(false), []);
   const chartRef = useRef<SkyChartHandle>(null);
   // 안내 창은 한 방문에 한 번만 띄운다(닫은 뒤에는 새로고침하기 전까지 다시 뜨지 않는다).
@@ -139,20 +152,23 @@ export function Starmap() {
   const openOptions = () => {
     setSearchOpen(false);
     setHintOpen(false);
-    setArNoticeOpen(false);
+    setArNotice(null);
     setOptionsOpen(true);
   };
   const openSearch = () => {
     setOptionsOpen(false);
     setHintOpen(false);
-    setArNoticeOpen(false);
+    setArNotice(null);
     setSearchOpen(true);
   };
   const openArNotice = () => {
     setOptionsOpen(false);
     setSearchOpen(false);
     setHintOpen(false);
-    setArNoticeOpen(true);
+    setArNotice(null);
+    // 앱에서는 AR 화면을 연다(카메라 권한은 그때 묻는다). 브라우저에서는 앱에서 쓸 수 있다고 안내만 한다.
+    if (isAndroidApp()) setArOpen(true);
+    else setArNotice("browser");
   };
 
   const closeHint = useCallback((dontShowAgain: boolean, enableRotateMode: boolean) => {
@@ -161,16 +177,21 @@ export function Starmap() {
     setHintOpen(false);
   }, []);
 
-  // 안드로이드 앱(android/)의 뒤로 가기 버튼이 먼저 묻는다. 가운데 창, 별자리 팝업 순으로 닫고
-  // 닫은 것이 있으면 true를 돌려준다. false면 앱이 닫힌다.
+  // 안드로이드 앱(android/)의 뒤로 가기 버튼이 먼저 묻는다. AR 화면에서는 별자리 팝업, AR 화면 순으로,
+  // 지도에서는 가운데 창, 별자리 팝업 순으로 닫고 닫은 것이 있으면 true를 돌려준다. false면 앱이 닫힌다.
   const dialogOpen = optionsOpen || searchOpen || arNoticeOpen || hintOpen;
   useEffect(() => {
     const androidWindow = window as AndroidBackWindow;
     androidWindow.onAndroidBack = () => {
+      if (arOpen) {
+        if (selectedId) setSelectedId(null);
+        else setArOpen(false);
+        return true;
+      }
       if (dialogOpen) {
         setOptionsOpen(false);
         setSearchOpen(false);
-        setArNoticeOpen(false);
+        setArNotice(null);
         setHintOpen(false);
         return true;
       }
@@ -183,7 +204,7 @@ export function Starmap() {
     return () => {
       delete androidWindow.onAndroidBack;
     };
-  }, [dialogOpen, selectedId]);
+  }, [arOpen, dialogOpen, selectedId]);
 
   const lstDeg = observer && now ? lstDegrees(now, observer.lonDeg) : null;
 
@@ -201,124 +222,146 @@ export function Starmap() {
     return <p className="text-sm text-slate-300 p-4">하늘을 계산하는 중입니다…</p>;
   }
 
+  // 위치·시각 줄과 별자리 팝업은 지금 보이는 화면(하늘지도 또는 AR 화면)에만 둔다.
+  const header = (
+    <div
+      className="flex items-start justify-between gap-3 px-3 pt-[calc(0.75rem+env(safe-area-inset-top))] pb-1 text-xs text-slate-100"
+      data-testid="sky-status"
+    >
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <span className="flex items-center gap-1.5 font-medium">
+          <MapPinIcon aria-hidden className="size-3.5 shrink-0" />
+          {observer.isFallback ? "서울 (위치를 확인하지 못해 기본값 사용)" : "현재 위치"}
+        </span>
+        <span className="text-slate-400">
+          {formatCoordinates(observer.latDeg, observer.lonDeg)}
+        </span>
+      </div>
+      <div className="flex shrink-0 flex-col gap-0.5 text-right">
+        <span className="font-medium">
+          {now.toLocaleTimeString("ko-KR", { timeStyle: "short" })}
+        </span>
+        <span className="text-slate-400">
+          {now.toLocaleDateString("ko-KR", { dateStyle: "medium" })}
+        </span>
+      </div>
+    </div>
+  );
+  const popup = (
+    selected ? (
+      <ConstellationPopup
+        constellation={selected}
+        lines={data.lines
+          .filter((line) => line.id === selected.id)
+          .flatMap((line) => line.geometry.coordinates)}
+        description={data.descriptions[selected.id]}
+        onClose={() => setSelectedId(null)}
+      />
+    ) : null
+  );
+
   return (
-    <SkyChart
-      data={data}
-      latDeg={observer.latDeg}
-      lstDeg={lstDeg}
-      selectedId={selectedId}
-      onSelect={setSelectedId}
-      showAsterisms={showAsterisms}
-      showOtherStars={showOtherStars}
-      chartRef={chartRef}
-      rotateMode={rotateMode}
-      onPanBlocked={handlePanBlocked}
-      onRecenter={relocate}
-      header={
-        <div
-          className="flex items-start justify-between gap-3 px-3 pt-[calc(0.75rem+env(safe-area-inset-top))] pb-1 text-xs text-slate-100"
-          data-testid="sky-status"
-        >
-          <div className="flex min-w-0 flex-col gap-0.5">
-            <span className="flex items-center gap-1.5 font-medium">
-              <MapPinIcon aria-hidden className="size-3.5 shrink-0" />
-              {observer.isFallback ? "서울 (위치를 확인하지 못해 기본값 사용)" : "현재 위치"}
-            </span>
-            <span className="text-slate-400">
-              {formatCoordinates(observer.latDeg, observer.lonDeg)}
-            </span>
+    <>
+      <SkyChart
+        data={data}
+        latDeg={observer.latDeg}
+        lstDeg={lstDeg}
+        selectedId={selectedId}
+        onSelect={setSelectedId}
+        showAsterisms={showAsterisms}
+        showOtherStars={showOtherStars}
+        chartRef={chartRef}
+        rotateMode={rotateMode}
+        onPanBlocked={handlePanBlocked}
+        onRecenter={relocate}
+        header={arOpen ? null : header}
+        menu={
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              size="icon-lg"
+              aria-label="AR 모드"
+              className="rounded-full shadow-lg"
+              onClick={openArNotice}
+            >
+              <CameraIcon />
+            </Button>
+            <Button
+              variant="secondary"
+              size="icon-lg"
+              aria-label="찾기"
+              className="rounded-full shadow-lg"
+              onClick={openSearch}
+            >
+              <SearchIcon />
+            </Button>
+            <Button
+              variant={rotateMode ? "default" : "secondary"}
+              size="icon-lg"
+              aria-label="돌리기 모드"
+              aria-pressed={rotateMode}
+              className="rounded-full shadow-lg"
+              onClick={() => setRotateMode((on) => !on)}
+            >
+              <Rotate3dIcon />
+            </Button>
+            <Button
+              variant="secondary"
+              size="icon-lg"
+              aria-label="옵션"
+              className="rounded-full shadow-lg"
+              onClick={openOptions}
+            >
+              <SlidersHorizontalIcon />
+            </Button>
           </div>
-          <div className="flex shrink-0 flex-col gap-0.5 text-right">
-            <span className="font-medium">
-              {now.toLocaleTimeString("ko-KR", { timeStyle: "short" })}
-            </span>
-            <span className="text-slate-400">
-              {now.toLocaleDateString("ko-KR", { dateStyle: "medium" })}
-            </span>
-          </div>
-        </div>
-      }
-      menu={
-        <div className="flex gap-2">
-          <Button
-            variant="secondary"
-            size="icon-lg"
-            aria-label="AR 모드"
-            className="rounded-full shadow-lg"
-            onClick={openArNotice}
-          >
-            <CameraIcon />
-          </Button>
-          <Button
-            variant="secondary"
-            size="icon-lg"
-            aria-label="찾기"
-            className="rounded-full shadow-lg"
-            onClick={openSearch}
-          >
-            <SearchIcon />
-          </Button>
-          <Button
-            variant={rotateMode ? "default" : "secondary"}
-            size="icon-lg"
-            aria-label="돌리기 모드"
-            aria-pressed={rotateMode}
-            className="rounded-full shadow-lg"
-            onClick={() => setRotateMode((on) => !on)}
-          >
-            <Rotate3dIcon />
-          </Button>
-          <Button
-            variant="secondary"
-            size="icon-lg"
-            aria-label="옵션"
-            className="rounded-full shadow-lg"
-            onClick={openOptions}
-          >
-            <SlidersHorizontalIcon />
-          </Button>
-        </div>
-      }
-      dialog={
-        optionsOpen ? (
-          <OptionsPanel
-            showAsterisms={showAsterisms}
-            onShowAsterismsChange={setShowAsterisms}
-            showOtherStars={showOtherStars}
-            onShowOtherStarsChange={setShowOtherStars}
-            onClose={closeOptions}
-          />
-        ) : arNoticeOpen ? (
-          <ArNotice onClose={closeArNotice} />
-        ) : searchOpen ? (
-          <SearchPanel
-            constellations={data.constellations}
-            onPick={(id) => {
-              chartRef.current?.focusOn(id);
-              setSelectedId(id);
-              setSearchOpen(false);
-            }}
-            onClose={closeSearch}
-          />
-        ) : hintOpen ? (
-          <RotateHint
-            onEnable={(dontShowAgain) => closeHint(dontShowAgain, true)}
-            onClose={(dontShowAgain) => closeHint(dontShowAgain, false)}
-          />
-        ) : null
-      }
-      popup={
-        selected ? (
-          <ConstellationPopup
-            constellation={selected}
-            lines={data.lines
-              .filter((line) => line.id === selected.id)
-              .flatMap((line) => line.geometry.coordinates)}
-            description={data.descriptions[selected.id]}
-            onClose={() => setSelectedId(null)}
-          />
-        ) : null
-      }
-    />
+        }
+        dialog={
+          optionsOpen ? (
+            <OptionsPanel
+              showAsterisms={showAsterisms}
+              onShowAsterismsChange={setShowAsterisms}
+              showOtherStars={showOtherStars}
+              onShowOtherStarsChange={setShowOtherStars}
+              onClose={closeOptions}
+            />
+          ) : arNotice ? (
+            <ArNotice reason={arNotice} onClose={closeArNotice} />
+          ) : searchOpen ? (
+            <SearchPanel
+              constellations={data.constellations}
+              onPick={(id) => {
+                chartRef.current?.focusOn(id);
+                setSelectedId(id);
+                setSearchOpen(false);
+              }}
+              onClose={closeSearch}
+            />
+          ) : hintOpen ? (
+            <RotateHint
+              onEnable={(dontShowAgain) => closeHint(dontShowAgain, true)}
+              onClose={(dontShowAgain) => closeHint(dontShowAgain, false)}
+            />
+          ) : null
+        }
+        popup={arOpen ? null : popup}
+      />
+      {arOpen && (
+        <ArView
+          data={data}
+          latDeg={observer.latDeg}
+          lstDeg={lstDeg}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          showAsterisms={showAsterisms}
+          header={header}
+          popup={popup}
+          azimuthOffset={arAzimuthOffset}
+          onAzimuthOffsetChange={setArAzimuthOffset}
+          onClose={closeAr}
+          onCameraUnavailable={handleCameraUnavailable}
+        />
+      )}
+    </>
   );
 }

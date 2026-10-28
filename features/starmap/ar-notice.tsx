@@ -11,13 +11,23 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
+// browser: 브라우저에서는 AR 을 제공하지 않는다(카메라를 켜거나 권한을 요청하지 않는다).
+// camera-denied·camera-failed: 앱에서 카메라 권한을 거부했거나 카메라를 켤 수 없었다.
+export type ArNoticeReason = "browser" | "camera-denied" | "camera-failed";
+
+const MESSAGES: Record<ArNoticeReason, string> = {
+  browser: "휴대폰 카메라로 밤하늘을 비추면 별자리를 겹쳐 보여 주는 기능입니다. AR 모드는 Starmap 안드로이드 앱에서 쓸 수 있습니다.",
+  "camera-denied":
+    "카메라 권한이 있어야 AR 모드를 쓸 수 있습니다. AR 모드 버튼을 다시 누르면 권한을 다시 묻습니다. 묻지 않으면 설정 → 애플리케이션 → Starmap → 권한에서 카메라를 허용해 주세요.",
+  "camera-failed": "카메라를 켤 수 없어 AR 모드를 열지 못했습니다. 다른 앱이 카메라를 쓰고 있지 않은지 확인해 주세요.",
+};
+
 type ArNoticeProps = {
+  reason: ArNoticeReason;
   onClose: () => void;
 };
 
-// AR 모드는 아직 모바일 앱에서만 만들 예정이라, 웹에서는 지원하지 않는다는 안내만 한다.
-// 카메라를 켜거나 카메라 권한을 요청하지 않는다.
-export function ArNotice({ onClose }: ArNoticeProps) {
+export function ArNotice({ reason, onClose }: ArNoticeProps) {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
@@ -35,8 +45,7 @@ export function ArNotice({ onClose }: ArNoticeProps) {
       <CardHeader>
         <CardTitle>AR 모드</CardTitle>
         <CardDescription className="text-slate-300">
-          휴대폰 카메라로 밤하늘을 비추면 지표 별로 별자리 위치를 알려 주는 기능입니다. 현재는 웹에서는
-          지원하지 않고, 모바일 앱에서 지원할 예정입니다.
+          {MESSAGES[reason]}
         </CardDescription>
       </CardHeader>
       <CardFooter className="justify-end">

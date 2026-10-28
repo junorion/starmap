@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { Starmap } from "@/features/starmap";
@@ -541,7 +541,7 @@ function stubNavigatorWithCamera() {
   return getUserMedia;
 }
 
-test("AR 모드 버튼을 누르면 웹에서는 지원하지 않는다는 안내가 뜨고, 확인으로 닫히며, 카메라는 요청하지 않는다", async () => {
+test("브라우저에서 AR 모드 버튼을 누르면 앱에서 쓸 수 있다는 안내가 뜨고, 확인으로 닫히며, 카메라는 요청하지 않는다", async () => {
   const getUserMedia = stubNavigatorWithCamera();
   render(<Starmap />);
   const map = await screen.findByLabelText("현재 하늘의 별자리 지도");
@@ -550,8 +550,7 @@ test("AR 모드 버튼을 누르면 웹에서는 지원하지 않는다는 안�
   fireEvent.click(await screen.findByRole("button", { name: "AR 모드" }));
 
   const notice = await screen.findByRole("dialog", AR_DIALOG);
-  expect(notice).toHaveTextContent("현재는 웹에서는 지원하지 않고");
-  expect(notice).toHaveTextContent("모바일 앱에서 지원할 예정");
+  expect(notice).toHaveTextContent("AR 모드는 Starmap 안드로이드 앱에서 쓸 수 있습니다");
 
   fireEvent.click(screen.getByRole("button", { name: "확인" }));
   expect(screen.queryByRole("dialog", AR_DIALOG)).not.toBeInTheDocument();
@@ -650,4 +649,139 @@ test("뒤로 가기는 가운데 창이 없으면 별자리 팝업을 닫고, �
   expect(screen.queryByRole("dialog", { name: "오리온자리 정보" })).not.toBeInTheDocument();
 
   expect(pressAndroidBack()).toBe(false);
+});
+
+// 안드로이드 앱 안: 래퍼가 붙이는 StarmapNative(카메라 화각)와 카메라·위치를 가진 navigator.
+function stubAndroidApp({ cameraError }: { cameraError?: string } = {}) {
+  const stop = vi.fn();
+  const getUserMedia = vi.fn(async () => {
+    if (cameraError) throw Object.assign(new Error(cameraError), { name: cameraError });
+    return { getTracks: () => [{ stop }] } as unknown as MediaStream;
+  });
+  vi.stubGlobal("navigator", {
+    mediaDevices: { getUserMedia },
+    geolocation: {
+      getCurrentPosition: (_: PositionCallback, failure: PositionErrorCallback) =>
+        failure({ code: 1 } as GeolocationPositionError),
+    },
+  });
+  vi.stubGlobal("StarmapNative", { cameraFov: () => JSON.stringify({ long: 70, short: 55 }) });
+  return { getUserMedia, stop };
+}
+
+const AR_SCREEN = { name: "AR 화면" };
+
+test("앱에서 AR 모드 버튼을 누르면 후면 카메라를 요청하고 AR 화면이 열리며, 닫기를 누르면 카메라를 끄고 지도로 돌아온다", async () => {
+  const { getUserMedia, stop } = stubAndroidApp();
+  render(<Starmap />);
+
+  fireEvent.click(await screen.findByRole("button", { name: "AR 모드" }));
+
+  expect(await screen.findByRole("region", AR_SCREEN)).toBeInTheDocument();
+  expect(getUserMedia).toHaveBeenCalledWith(
+    expect.objectContaining({ audio: false, video: expect.objectContaining({ facingMode: { ideal: "environment" } }) })
+  );
+  // 위치·시각 줄은 AR 화면 위에 그대로 있다.
+  expect(within(screen.getByRole("region", AR_SCREEN)).getByTestId("sky-status")).toBeInTheDocument();
+  await waitFor(() => expect(screen.getByLabelText("AR 카메라 영상")).toHaveProperty("srcObject"));
+
+  fireEvent.click(screen.getByRole("button", { name: "AR 닫기" }));
+
+  expect(screen.queryByRole("region", AR_SCREEN)).not.toBeInTheDocument();
+  expect(stop).toHaveBeenCalled();
+  expect(screen.getByLabelText("현재 하늘의 별자리 지도")).toBeInTheDocument();
+});
+
+test("앱에서 카메라 권한을 거부하면 AR 화면이 닫히고 지도 위에 권한 안내가 뜬다", async () => {
+  stubAndroidApp({ cameraError: "NotAllowedError" });
+  render(<Starmap />);
+
+  fireEvent.click(await screen.findByRole("button", { name: "AR 모드" }));
+
+  const notice = await screen.findByRole("dialog", AR_DIALOG);
+  expect(notice).toHaveTextContent("카메라 권한이 있어야 AR 모드를 쓸 수 있습니다");
+  expect(screen.queryByRole("region", AR_SCREEN)).not.toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "확인" }));
+  expect(screen.queryByRole("dialog", AR_DIALOG)).not.toBeInTheDocument();
+});
+
+test("AR 화면에서 뒤로 가기는 별자리 팝업부터 닫고, 그다음 AR 화면을 닫는다", async () => {
+  stubAndroidApp();
+  render(<Starmap />);
+
+  // 찾기로 오리온자리를 고른 뒤 AR 을 연다. 고른 별자리는 AR 화면에서도 선택된 채다.
+  await openSearch();
+  typeInSearch("오리온");
+  fireEvent.click(await screen.findByRole("button", { name: /오리온자리/ }));
+  fireEvent.click(screen.getByRole("button", { name: "AR 모드" }));
+  const ar = await screen.findByRole("region", AR_SCREEN);
+  expect(within(ar).getByRole("dialog", { name: "오리온자리 정보" })).toBeInTheDocument();
+
+  expect(pressAndroidBack()).toBe(true);
+  expect(screen.queryByRole("dialog", { name: "오리온자리 정보" })).not.toBeInTheDocument();
+  expect(screen.getByRole("region", AR_SCREEN)).toBeInTheDocument();
+
+  expect(pressAndroidBack()).toBe(true);
+  expect(screen.queryByRole("region", AR_SCREEN)).not.toBeInTheDocument();
+});
+
+test("AR 화면에서 방향 값이 3초 동안 오지 않으면 방향 센서를 쓸 수 없다고 알린다", async () => {
+  stubAndroidApp();
+  render(<Starmap />);
+  const arButton = await screen.findByRole("button", { name: "AR 모드" });
+
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+  try {
+    fireEvent.click(arButton);
+    expect(screen.getByRole("region", AR_SCREEN)).toBeInTheDocument();
+    expect(screen.queryByText(/방향 센서를 쓸 수 없어/)).not.toBeInTheDocument();
+
+    act(() => vi.advanceTimersByTime(3500));
+    expect(screen.getByText(/방향 센서를 쓸 수 없어/)).toBeInTheDocument();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("AR 화면에서 좌우로 끌면 방위 보정만 바뀌어 표시되고, 보정 초기화로 돌아가며, 닫았다 열어도 보정은 남는다", async () => {
+  stubAndroidApp();
+  // AR 화면이 크기를 알아야 그림을 그리고 끌기를 보정으로 바꾼다.
+  vi.stubGlobal("ResizeObserver", class {
+    constructor(private readonly callback: ResizeObserverCallback) {}
+    observe() {
+      this.callback([{ contentRect: { width: 400, height: 800 } } as ResizeObserverEntry], this as never);
+    }
+    disconnect() {}
+  });
+  render(<Starmap />);
+  fireEvent.click(await screen.findByRole("button", { name: "AR 모드" }));
+  const overlay = await screen.findByLabelText("AR 별자리 겹쳐 보기");
+
+  // 세로로 든 폰이 정북 지평선을 향한다.
+  act(() => {
+    window.dispatchEvent(Object.assign(new Event("deviceorientationabsolute"), { alpha: 0, beta: 90, gamma: 0 }));
+  });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(screen.queryByRole("button", { name: "보정 초기화" })).not.toBeInTheDocument();
+
+  // 3px 은 누르기로 본다(보정 없음).
+  pointer(overlay, "pointerDown", { id: 1, x: 200, y: 400 });
+  pointer(overlay, "pointerMove", { id: 1, x: 203, y: 400 });
+  pointer(overlay, "pointerUp", { id: 1, x: 203, y: 400 });
+  expect(screen.queryByRole("button", { name: "보정 초기화" })).not.toBeInTheDocument();
+
+  // 오른쪽으로 끌면 그림이 따라오도록 보정이 음수가 된다.
+  pointer(overlay, "pointerDown", { id: 1, x: 200, y: 400 });
+  pointer(overlay, "pointerMove", { id: 1, x: 260, y: 430 });
+  pointer(overlay, "pointerUp", { id: 1, x: 260, y: 430 });
+  expect(screen.getByText(/보정 −\d+°/)).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "AR 닫기" }));
+  fireEvent.click(screen.getByRole("button", { name: "AR 모드" }));
+  await screen.findByRole("region", AR_SCREEN);
+  expect(screen.getByText(/보정 −\d+°/)).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "보정 초기화" }));
+  expect(screen.queryByText(/보정 [+−]\d+°/)).not.toBeInTheDocument();
 });

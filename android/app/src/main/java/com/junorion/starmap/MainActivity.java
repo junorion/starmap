@@ -9,6 +9,7 @@ import android.os.Bundle;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.GeolocationPermissions;
+import android.webkit.PermissionRequest;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
@@ -21,16 +22,19 @@ import androidx.webkit.WebViewAssetLoader;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Arrays;
 
 /**
  * Next.js 정적 결과(out/)를 그대로 담아 띄우는 얇은 WebView 껍데기.
- * 하늘지도 로직은 전부 웹 쪽에 있고, 여기서는 자산 서빙, 위치 권한, 뒤로 가기만 잇는다.
+ * 하늘지도와 AR 로직은 전부 웹 쪽에 있고, 여기서는 자산 서빙, 위치·카메라 권한, 뒤로 가기,
+ * 그리고 웹에 없는 카메라 화각(NativeBridge)만 잇는다.
  */
 public class MainActivity extends Activity {
 
     /** 앱 자산을 내주는 가상 https 출처. 실제 네트워크로는 나가지 않는다. */
     private static final String ORIGIN = "https://" + WebViewAssetLoader.DEFAULT_DOMAIN;
     private static final int REQUEST_LOCATION = 1;
+    private static final int REQUEST_CAMERA = 2;
 
     private WebView web;
     private WebViewAssetLoader assetLoader;
@@ -38,6 +42,8 @@ public class MainActivity extends Activity {
     // 웹이 위치를 물었을 때 안드로이드 권한 대화상자의 답을 기다리는 요청
     private String pendingGeoOrigin;
     private GeolocationPermissions.Callback pendingGeoCallback;
+    // 웹이 카메라(getUserMedia)를 요청했을 때 안드로이드 권한 대화상자의 답을 기다리는 요청
+    private PermissionRequest pendingCameraRequest;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -74,6 +80,8 @@ public class MainActivity extends Activity {
         s.setAllowContentAccess(false);
         s.setUseWideViewPort(true);
         s.setLoadWithOverviewMode(true);
+        // AR 화면의 카메라 영상은 권한 대화상자를 거친 뒤 재생되므로 사용자 동작 없이도 재생되게 한다.
+        s.setMediaPlaybackRequiresUserGesture(false);
         // 확대·축소는 지도가 직접 처리한다(핀치). 페이지 확대는 막는다.
         s.setSupportZoom(false);
         s.setBuiltInZoomControls(false);
@@ -83,6 +91,8 @@ public class MainActivity extends Activity {
 
         web.setWebViewClient(new AssetClient());
         web.setWebChromeClient(new GeoChromeClient());
+        // 앱 자산 밖으로는 이동하지 않으므로(AssetClient) 이 연결은 우리 페이지에만 보인다.
+        web.addJavascriptInterface(new NativeBridge(this), "StarmapNative");
 
         setContentView(web);
         web.loadUrl(ORIGIN + "/");
@@ -147,7 +157,7 @@ public class MainActivity extends Activity {
         }
     }
 
-    /** 웹의 navigator.geolocation 요청을 안드로이드 위치 권한으로 잇는다. */
+    /** 웹의 위치(navigator.geolocation)·카메라(getUserMedia) 요청을 안드로이드 권한으로 잇는다. */
     private final class GeoChromeClient extends WebChromeClient {
 
         @Override
@@ -174,6 +184,32 @@ public class MainActivity extends Activity {
             pendingGeoOrigin = null;
             pendingGeoCallback = null;
         }
+
+        @Override
+        public void onPermissionRequest(PermissionRequest request) {
+            boolean ours = ORIGIN.equals(stripSlash(request.getOrigin().toString()));
+            boolean camera = Arrays.asList(request.getResources())
+                    .contains(PermissionRequest.RESOURCE_VIDEO_CAPTURE);
+            if (!ours || !camera) {
+                request.deny();
+                return;
+            }
+            if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                grantCamera(request);
+                return;
+            }
+            pendingCameraRequest = request;
+            requestPermissions(new String[] { Manifest.permission.CAMERA }, REQUEST_CAMERA);
+        }
+
+        @Override
+        public void onPermissionRequestCanceled(PermissionRequest request) {
+            if (request == pendingCameraRequest) pendingCameraRequest = null;
+        }
+    }
+
+    private static void grantCamera(PermissionRequest request) {
+        request.grant(new String[] { PermissionRequest.RESOURCE_VIDEO_CAPTURE });
     }
 
     private static String stripSlash(String s) {
@@ -191,11 +227,20 @@ public class MainActivity extends Activity {
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(requestCode, permissions, results);
-        if (requestCode != REQUEST_LOCATION || pendingGeoCallback == null) return;
-        // retain=false: 권한이 나중에 바뀌어도 다음 요청 때 다시 확인한다.
-        pendingGeoCallback.invoke(pendingGeoOrigin, hasLocationPermission(), false);
-        pendingGeoOrigin = null;
-        pendingGeoCallback = null;
+        if (requestCode == REQUEST_LOCATION && pendingGeoCallback != null) {
+            // retain=false: 권한이 나중에 바뀌어도 다음 요청 때 다시 확인한다.
+            pendingGeoCallback.invoke(pendingGeoOrigin, hasLocationPermission(), false);
+            pendingGeoOrigin = null;
+            pendingGeoCallback = null;
+        } else if (requestCode == REQUEST_CAMERA && pendingCameraRequest != null) {
+            // 거부하면 웹의 getUserMedia 가 NotAllowedError 로 끝나고, 웹이 권한 안내를 띄운다.
+            if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                grantCamera(pendingCameraRequest);
+            } else {
+                pendingCameraRequest.deny();
+            }
+            pendingCameraRequest = null;
+        }
     }
 
     @Override
