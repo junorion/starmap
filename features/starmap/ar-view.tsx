@@ -14,6 +14,7 @@ import {
   solveAlignment,
   type AlignmentTarget,
 } from "@/features/starmap/ar-alignment";
+import { overlayStyle, useOverlayContrast, type OverlayStyle } from "@/features/starmap/ar-brightness";
 import { useRearCamera, type CameraState } from "@/features/starmap/ar-camera";
 import { useDeviceRotation } from "@/features/starmap/ar-orientation";
 import {
@@ -126,6 +127,9 @@ export function ArView({
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const camera = useRearCamera(videoRef);
+  // 영상이 밝을수록 겹친 그림이 묻히므로 대비를 자동으로 올린다.
+  const contrast = useOverlayContrast(videoRef);
+  const style = useMemo(() => overlayStyle(contrast), [contrast]);
   const { rotation, available } = useDeviceRotation();
   const [box, setBox] = useState({ width: 0, height: 0 });
   const longFov = useMemo(() => cameraLongFov(), []);
@@ -252,11 +256,11 @@ export function ArView({
       }
       ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
       ctx.clearRect(0, 0, box.width, box.height);
-      paintFrame(ctx, computed, selectedId, aligning);
+      paintFrame(ctx, computed, selectedId, aligning, style);
     };
     tick();
     return () => cancel(handle);
-  }, [box, sky, rotation, projectionFor, selectedId, showAsterisms, aligning]);
+  }, [box, sky, rotation, projectionFor, selectedId, showAsterisms, aligning, style]);
 
   function handlePointerDown(event: React.PointerEvent<HTMLCanvasElement>) {
     event.currentTarget.setPointerCapture?.(event.pointerId);
@@ -394,6 +398,13 @@ export function ArView({
         autoPlay
         muted
         playsInline
+      />
+      {/* 영상이 밝을 때 깔아 배경을 눌러 주는 검은 막 */}
+      <div
+        aria-hidden
+        data-testid="ar-scrim"
+        className="pointer-events-none absolute inset-0 bg-black transition-opacity duration-500"
+        style={{ opacity: style.scrim }}
       />
       <canvas
         ref={canvasRef}
@@ -575,7 +586,7 @@ function computeFrame(
 
   const stars = sky.stars.flatMap(({ at, size }) => {
     const p = project(at);
-    return p ? [{ ...p, size: size * 1.2, hidden: at.alt <= 0 }] : [];
+    return p ? [{ ...p, size, hidden: at.alt <= 0 }] : [];
   });
   const labels = sky.labels.flatMap(({ id, name, at }) => {
     if (!visible(id)) return [];
@@ -612,7 +623,13 @@ function computeFrame(
   };
 }
 
-function paintFrame(ctx: CanvasRenderingContext2D, frame: Frame, selectedId: string | null, aligning: boolean) {
+function paintFrame(
+  ctx: CanvasRenderingContext2D,
+  frame: Frame,
+  selectedId: string | null,
+  aligning: boolean,
+  style: OverlayStyle
+) {
   // 맞추기 중에는 지표별이 눈에 띄도록 별자리 선과 이름을 흐리게 그린다.
   const dim = aligning ? 0.4 : 1;
 
@@ -627,8 +644,8 @@ function paintFrame(ctx: CanvasRenderingContext2D, frame: Frame, selectedId: str
 
   ctx.lineCap = "round";
   for (const hidden of [true, false]) {
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = `rgba(147, 197, 253, ${0.6 * dim * (hidden ? HIDDEN_SKY_OPACITY : 1)})`;
+    ctx.lineWidth = style.lineWidth;
+    ctx.strokeStyle = `rgba(147, 197, 253, ${style.lineAlpha * dim * (hidden ? HIDDEN_SKY_OPACITY : 1)})`;
     ctx.beginPath();
     for (const { id, a, b, hidden: isHidden } of frame.segments) {
       if (id === selectedId || Boolean(isHidden) !== hidden) continue;
@@ -638,7 +655,7 @@ function paintFrame(ctx: CanvasRenderingContext2D, frame: Frame, selectedId: str
     ctx.stroke();
   }
   ctx.strokeStyle = "#fbbf24";
-  ctx.lineWidth = 3;
+  ctx.lineWidth = style.lineWidth + 1.5;
   ctx.beginPath();
   for (const { id, a, b } of frame.segments) {
     if (id !== selectedId) continue;
@@ -648,21 +665,32 @@ function paintFrame(ctx: CanvasRenderingContext2D, frame: Frame, selectedId: str
   ctx.stroke();
 
   for (const { x, y, size, hidden } of frame.stars) {
+    const radius = size * style.starScale;
+    // 밝은 영상에서는 별 둘레에 어두운 테두리를 둘러 배경과 떼어 낸다.
+    if (style.starOutline > 0) {
+      ctx.lineWidth = style.starOutline;
+      ctx.strokeStyle = "rgba(2, 6, 23, 0.75)";
+      ctx.beginPath();
+      ctx.arc(x, y, radius + style.starOutline / 2, 0, Math.PI * 2);
+      ctx.stroke();
+    }
     ctx.fillStyle = `rgba(248, 250, 252, ${hidden ? HIDDEN_SKY_OPACITY : 1})`;
     ctx.beginPath();
-    ctx.arc(x, y, size, 0, Math.PI * 2);
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
     ctx.fill();
   }
 
   // 글씨는 카메라 영상 위에서도 읽히도록 어두운 그림자를 둔다.
   ctx.shadowColor = "rgba(0, 0, 0, 0.9)";
-  ctx.shadowBlur = 4;
+  ctx.shadowBlur = style.shadowBlur;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.font = "13px sans-serif";
+  ctx.font = `${style.labelBold ? "bold " : ""}13px sans-serif`;
   for (const { id, name, x, y, hidden } of frame.labels) {
     ctx.fillStyle =
-      id === selectedId ? "#fbbf24" : `rgba(226, 232, 240, ${0.9 * dim * (hidden ? HIDDEN_SKY_OPACITY : 1)})`;
+      id === selectedId
+        ? "#fbbf24"
+        : `rgba(226, 232, 240, ${style.labelAlpha * dim * (hidden ? HIDDEN_SKY_OPACITY : 1)})`;
     ctx.fillText(name, x, y);
   }
 
