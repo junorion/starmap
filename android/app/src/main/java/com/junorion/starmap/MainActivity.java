@@ -80,9 +80,6 @@ public class MainActivity extends Activity {
         s.setDisplayZoomControls(false);
         // 기기 글꼴 크기 설정에 레이아웃이 흔들리지 않게 고정한다.
         s.setTextZoom(100);
-        // 웹이 앱 안에서 열렸음을 알 수 있게 표시를 붙인다. 웹은 이걸 보고 태블릿처럼 넓은 화면에서도
-        // 제목과 휴대폰 모양 틀 없이 지도를 화면 전체로 그린다(app/layout.tsx).
-        s.setUserAgentString(s.getUserAgentString() + " StarmapAndroid/1");
 
         web.setWebViewClient(new AssetClient());
         web.setWebChromeClient(new GeoChromeClient());

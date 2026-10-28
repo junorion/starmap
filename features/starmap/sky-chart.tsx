@@ -522,8 +522,8 @@ export function SkyChart({
   }
 
   return (
-    // 휴대폰(640px 미만)과 안드로이드 앱에서는 휴대폰 모양 틀 대신 기기 화면 전체를 채운다.
-    <div className="relative mx-auto flex aspect-[9/19.5] w-full max-w-[390px] flex-col overflow-hidden rounded-xl bg-[#0b1020] fullscreen:aspect-auto fullscreen:h-dvh fullscreen:max-w-none fullscreen:rounded-none">
+    // 지도 화면은 기기·브라우저 화면 전체를 채운다.
+    <div className="relative flex h-dvh w-full flex-col overflow-hidden bg-[#0b1020]">
       {header}
       <div ref={wrapperRef} className="relative min-h-0 flex-1">
         <canvas
