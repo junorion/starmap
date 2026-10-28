@@ -7,7 +7,8 @@ plugins {
 def webOut = rootProject.file("../out")
 def genDir = file("${layout.buildDirectory.get().asFile}/generated/webapp")
 
-def syncWebApp = tasks.register("syncWebApp", Copy) {
+def syncWebApp = tasks.register("syncWebApp", Sync) {
+    // Copy 가 아니라 Sync: 빌드마다 해시가 바뀌는 _next/ 의 옛 파일이 남지 않게 대상 폴더를 out/ 과 똑같이 맞춘다.
     description = "out/ 의 정적 웹 결과와 앱 아이콘을 안드로이드 소스셋으로 복사한다"
     doFirst {
         if (!new File(webOut, "index.html").exists()) {
