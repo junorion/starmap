@@ -1,6 +1,7 @@
 package com.junorion.starmap;
 
 import android.Manifest;
+import android.graphics.Insets;
 import android.app.Activity;
 import android.content.pm.PackageManager;
 import android.net.Uri;
@@ -8,6 +9,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowInsets;
 import android.webkit.GeolocationPermissions;
 import android.webkit.PermissionRequest;
 import android.webkit.WebChromeClient;
@@ -16,6 +18,7 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.FrameLayout;
 import android.window.OnBackInvokedDispatcher;
 
 import androidx.webkit.WebViewAssetLoader;
@@ -49,8 +52,9 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // targetSdk 35 부터 앱은 시스템 바 아래까지(edge-to-edge) 그려진다.
-        // 웹 쪽이 env(safe-area-inset-*) 로 위치 줄과 버튼을 시스템 바에서 피한다.
+        // targetSdk 35 부터 앱은 시스템 바 아래까지(edge-to-edge) 그려진다. WebView 는
+        // env(safe-area-inset-*) 에 내비게이션 바 높이를 주지 않는 버전이 많아(갤럭시 A32 에서
+        // 버튼이 가려짐), 웹에 맡기지 않고 아래 root 의 padding 으로 WebView 를 시스템 바 안쪽에 둔다.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             getWindow().setDecorFitsSystemWindows(false);
         }
@@ -94,7 +98,18 @@ public class MainActivity extends Activity {
         // 앱 자산 밖으로는 이동하지 않으므로(AssetClient) 이 연결은 우리 페이지에만 보인다.
         web.addJavascriptInterface(new NativeBridge(this), "StarmapNative");
 
-        setContentView(web);
+        FrameLayout root = new FrameLayout(this);
+        root.setBackgroundColor(getColor(R.color.app_background));
+        root.addView(web);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            root.setOnApplyWindowInsetsListener((v, insets) -> {
+                Insets bars = insets.getInsets(
+                        WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+                v.setPadding(bars.left, bars.top, bars.right, bars.bottom);
+                return WindowInsets.CONSUMED;
+            });
+        }
+        setContentView(root);
         web.loadUrl(ORIGIN + "/");
 
         // targetSdk 36(Android 16)부터는 예측형 뒤로 가기가 기본이라 onBackPressed() 가 불리지 않는다.
