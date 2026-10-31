@@ -70,6 +70,18 @@ describe("projectToScreen", () => {
   });
 });
 
+describe("자기 편각", () => {
+  it("편각 -8.5°(한국)면 센서가 아는 북(자북)을 볼 때 진북의 별은 8.5° 오른쪽에 보인다", () => {
+    const trueNorth = projectToScreen({ alt: 0, az: 0 }, PORTRAIT_FACING_NORTH, { ...portrait, declination: -8.5 });
+    expect(trueNorth?.x).toBeCloseTo(200 + portrait.focalPx * Math.tan(8.5 * DEG));
+    const magneticNorth = projectToScreen({ alt: 0, az: 351.5 }, PORTRAIT_FACING_NORTH, {
+      ...portrait,
+      declination: -8.5,
+    });
+    expect(magneticNorth?.x).toBeCloseTo(200);
+  });
+});
+
 describe("기기 방향을 회전 행렬로", () => {
   it("단위 쿼터니언은 단위 행렬이다", () => {
     expect(quaternionToMatrix([0, 0, 0, 1])).toEqual([1, 0, 0, 0, 1, 0, 0, 0, 1]);

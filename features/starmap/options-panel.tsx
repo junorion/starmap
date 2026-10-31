@@ -19,6 +19,8 @@ type OptionsPanelProps = {
   onShowAsterismsChange: (checked: boolean) => void;
   showOtherStars: boolean;
   onShowOtherStarsChange: (checked: boolean) => void;
+  // 진북 보정(AR). 안드로이드 앱에서만 넘긴다. declination 은 지금 위치의 편각(모르면 null).
+  trueNorth?: { checked: boolean; declination: number | null; onChange: (checked: boolean) => void };
   onClose: () => void;
 };
 
@@ -27,6 +29,7 @@ export function OptionsPanel({
   onShowAsterismsChange,
   showOtherStars,
   onShowOtherStarsChange,
+  trueNorth,
   onClose,
 }: OptionsPanelProps) {
   useEffect(() => {
@@ -87,8 +90,32 @@ export function OptionsPanel({
               </FieldDescription>
             </FieldContent>
           </Field>
+          {trueNorth && (
+            <Field orientation="horizontal">
+              <Checkbox
+                id="option-true-north"
+                className="border-white/60"
+                checked={trueNorth.checked}
+                onCheckedChange={(checked) => trueNorth.onChange(checked === true)}
+              />
+              <FieldContent>
+                <FieldLabel htmlFor="option-true-north">AR 진북 보정</FieldLabel>
+                <FieldDescription className="text-slate-300">
+                  나침반이 가리키는 자북과 실제 북쪽(진북)의 차이를 AR 화면에서 자동으로 메웁니다.
+                  {trueNorth.declination === null
+                    ? " 이 기기에서는 편각을 알 수 없어 적용되지 않습니다."
+                    : ` 현재 위치의 편각은 ${formatDeclination(trueNorth.declination)}입니다.`}
+                </FieldDescription>
+              </FieldContent>
+            </Field>
+          )}
         </FieldGroup>
       </CardContent>
     </Card>
   );
+}
+
+// -8.6 → "서쪽 8.6°", 3.2 → "동쪽 3.2°"
+function formatDeclination(deg: number): string {
+  return `${deg < 0 ? "서쪽" : "동쪽"} ${Math.abs(deg).toFixed(1)}°`;
 }

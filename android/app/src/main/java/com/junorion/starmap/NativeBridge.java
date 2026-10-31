@@ -1,6 +1,7 @@
 package com.junorion.starmap;
 
 import android.content.Context;
+import android.hardware.GeomagneticField;
 import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraManager;
 import android.util.SizeF;
@@ -49,6 +50,15 @@ public final class NativeBridge {
             // 카메라 정보를 읽지 못하면 웹이 기본 화각을 쓴다.
         }
         return "";
+    }
+
+    /**
+     * 그 위치의 지금 자기 편각(도, 동쪽 +)을 돌려준다. 폰 방향 센서는 자북 기준이므로 웹이 별 방위를
+     * 진북에서 자북으로 돌려 맞출 때 쓴다. 안드로이드에 들어 있는 세계 자기장 모델(WMM)로 계산한다.
+     */
+    @JavascriptInterface
+    public double magneticDeclination(double latDeg, double lonDeg) {
+        return new GeomagneticField((float) latDeg, (float) lonDeg, 0f, System.currentTimeMillis()).getDeclination();
     }
 
     private static double fovDegrees(double sensorMm, double focalMm) {

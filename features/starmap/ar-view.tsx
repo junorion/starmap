@@ -72,6 +72,8 @@ type ArViewProps = {
   // 방위·기울기·크기 보정. AR 화면을 닫았다 열어도 유지되도록 밖에서 들고 있는다.
   correction: ArCorrection;
   onCorrectionChange: Dispatch<SetStateAction<ArCorrection>>;
+  // 자기 편각(도). 진북 보정을 끄면 0.
+  declination: number;
   // 안드로이드 뒤로 가기를 AR 화면이 먼저 처리할 수 있게 넘겨주는 자리. 처리했으면 true.
   backHandlerRef: React.RefObject<(() => boolean) | null>;
   onClose: () => void;
@@ -119,6 +121,7 @@ export function ArView({
   popup,
   correction,
   onCorrectionChange,
+  declination,
   backHandlerRef,
   onClose,
   onCameraUnavailable,
@@ -224,11 +227,12 @@ export function ArView({
           videoHeight: video?.videoHeight ?? 0,
           longFovDeg: longFov,
         }),
+        declination,
         ...correction,
         ...extra,
       };
     },
-    [box, longFov, correction]
+    [box, longFov, correction, declination]
   );
 
   // 센서 값이 들어오는 대로 매 프레임 다시 계산하고 그린다.

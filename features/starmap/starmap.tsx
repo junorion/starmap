@@ -15,7 +15,7 @@ import { OptionsPanel } from "@/features/starmap/options-panel";
 import { RotateHint } from "@/features/starmap/rotate-hint";
 import { SearchPanel } from "@/features/starmap/search-panel";
 import { SkyChart, type SkyChartHandle } from "@/features/starmap/sky-chart";
-import { isAndroidApp } from "@/features/starmap/native-app";
+import { isAndroidApp, magneticDeclination } from "@/features/starmap/native-app";
 import { loadStarmapData, type StarmapData } from "@/features/starmap/starmap-data";
 
 const SEOUL = { latDeg: 37.5665, lonDeg: 126.978 };
@@ -61,6 +61,27 @@ function writeArScale(scale: number) {
   try {
     if (scale === 1) window.localStorage.removeItem(AR_SCALE_KEY);
     else window.localStorage.setItem(AR_SCALE_KEY, String(scale));
+  } catch {
+    // 저장하지 못해도 이번 방문에서는 쓴다.
+  }
+}
+
+// AR 진북 보정: 기본으로 켜고, 끈 경우만 저장한다.
+const AR_TRUE_NORTH_OFF_KEY = "starmap:ar-true-north-off";
+
+function readArTrueNorth(): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    return window.localStorage.getItem(AR_TRUE_NORTH_OFF_KEY) !== "1";
+  } catch {
+    return true;
+  }
+}
+
+function writeArTrueNorth(on: boolean) {
+  try {
+    if (on) window.localStorage.removeItem(AR_TRUE_NORTH_OFF_KEY);
+    else window.localStorage.setItem(AR_TRUE_NORTH_OFF_KEY, "1");
   } catch {
     // 저장하지 못해도 이번 방문에서는 쓴다.
   }
@@ -151,6 +172,13 @@ export function Starmap() {
     scale: readArScale(),
   }));
   useEffect(() => writeArScale(arCorrection.scale), [arCorrection.scale]);
+  const [arTrueNorth, setArTrueNorth] = useState(readArTrueNorth);
+  useEffect(() => writeArTrueNorth(arTrueNorth), [arTrueNorth]);
+  // 폰 방향 센서는 자북 기준이라 그 위치의 편각만큼 별 방위를 돌려 맞춘다(앱에서만 알 수 있다).
+  const declination = useMemo(
+    () => (observer ? magneticDeclination(observer.latDeg, observer.lonDeg) : null),
+    [observer]
+  );
   // AR 화면이 뒤로 가기를 먼저 처리할 수 있게(지표별 맞추기 취소 등) 넘겨받는 자리.
   const arBackHandler = useRef<(() => boolean) | null>(null);
   const closeAr = useCallback(() => setArOpen(false), []);
@@ -355,6 +383,11 @@ export function Starmap() {
               onShowAsterismsChange={setShowAsterisms}
               showOtherStars={showOtherStars}
               onShowOtherStarsChange={setShowOtherStars}
+              trueNorth={
+                isAndroidApp()
+                  ? { checked: arTrueNorth, declination, onChange: setArTrueNorth }
+                  : undefined
+              }
               onClose={closeOptions}
             />
           ) : arNotice ? (
@@ -390,6 +423,7 @@ export function Starmap() {
           popup={popup}
           correction={arCorrection}
           onCorrectionChange={setArCorrection}
+          declination={arTrueNorth ? (declination ?? 0) : 0}
           backHandlerRef={arBackHandler}
           onClose={closeAr}
           onCameraUnavailable={handleCameraUnavailable}

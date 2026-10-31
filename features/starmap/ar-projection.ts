@@ -24,6 +24,9 @@ export type ScreenProjection = {
   focalPx: number;
   // 나침반 오차를 맞추는 방위 보정(도). +면 그만큼 동쪽에 있는 점이 가운데로 온다.
   azimuthOffset?: number;
+  // 자기 편각(도, 동쪽 +). 폰 방향 센서는 자북 기준이라, 진북 기준인 별 방위를 이만큼 돌려 맞춘다.
+  // 한국은 약 -8.5°(자북이 진북보다 서쪽).
+  declination?: number;
   // 기울기 보정(도). +면 화면 가운데보다 그만큼 위에 있던 점이 가운데로 온다.
   pitchOffset?: number;
   // 크기 배율. 카메라 화각 오차를 메운다(지표별 맞추기).
@@ -33,6 +36,7 @@ export type ScreenProjection = {
 // 지표별 맞추기로 정하는 보정 세 가지.
 export type ArCorrection = { azimuthOffset: number; pitchOffset: number; scale: number };
 
+// 세계 좌표의 북(N)은 센서가 아는 북, 곧 자북이다. 진북 기준 방위에서 편각을 빼야 자북 기준이 된다.
 function worldVector({ alt, az }: HorizontalCoords, azimuthOffset: number): [number, number, number] {
   const a = (az - azimuthOffset) * DEG;
   const horizontal = Math.cos(alt * DEG);
@@ -43,9 +47,9 @@ function worldVector({ alt, az }: HorizontalCoords, azimuthOffset: number): [num
 export function projectToScreen(
   coords: HorizontalCoords,
   deviceToWorld: Matrix3,
-  { width, height, screenAngle, focalPx, azimuthOffset = 0, pitchOffset = 0, scale = 1 }: ScreenProjection
+  { width, height, screenAngle, focalPx, azimuthOffset = 0, declination = 0, pitchOffset = 0, scale = 1 }: ScreenProjection
 ): Point | null {
-  const [e, n, u] = worldVector(coords, azimuthOffset);
+  const [e, n, u] = worldVector(coords, azimuthOffset + declination);
   const r = deviceToWorld;
   // 세계 → 기기는 전치 행렬.
   const dx = r[0] * e + r[3] * n + r[6] * u;
