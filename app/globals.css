@@ -128,3 +128,13 @@
     @apply font-sans;
   }
 }
+/* 100dvh 를 모르는 옛 WebView(Chromium 108 미만)는 100vh 로 버틴다.
+   이게 없으면 높이가 0 이 되어 캔버스가 기본 300×150 비율로 위쪽에만 그려진다. */
+@utility h-screen-dvh {
+  height: 100dvh;
+}
+@supports not (height: 100dvh) {
+  .h-screen-dvh {
+    height: 100vh;
+  }
+}

@@ -523,7 +523,7 @@ export function SkyChart({
 
   return (
     // 지도 화면은 기기·브라우저 화면 전체를 채운다.
-    <div className="relative flex h-dvh w-full flex-col overflow-hidden bg-[#0b1020]">
+    <div className="relative flex h-screen-dvh w-full flex-col overflow-hidden bg-[#0b1020]">
       {header}
       <div ref={wrapperRef} className="relative min-h-0 flex-1">
         <canvas
